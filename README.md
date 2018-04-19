@@ -1,2 +1,2 @@
 # python-notebook
-Python Jupyter Notebook
+Python Jupyter-Notebook
