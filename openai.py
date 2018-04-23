@@ -24,32 +24,36 @@ def createNetworkData():
 
     return networkData;
 
-
 def createNetwork(data):
     network = Sequential()
-    network.add(Dense(32, input_dim=data.stateSize, activation='relu'))
-    network.add(Dense(32, activation='relu'))
+    network.add(Dense(24, input_dim=data.stateSize, activation='relu'))
+    network.add(Dense(24, activation='relu'))
     network.add(Dense(data.actionSize, activation='linear'))
+    ## 'mse' mean square error, cost function
+    ## optimizer, back propagation, gradient
     network.compile(loss='mse', optimizer=Adam(lr=data.learningRate))
 
     return network
 
-
 def createAction(network, data, state):
     if np.random.rand() <= data.epsilon:
         return random.randrange(data.actionSize)
-    predictedAction = network.predict(state)
-    return np.argmax(predictedAction[0])
+    
+    predictedRewardValues = network.predict(state)
+    ## argmax returns 0|1
+    return np.argmax(predictedRewardValues[0])
 
 def trainNetwork(network, data, size):
     trainingSample = random.sample(data.memory, size)
     for state, nextState, action, reward, done in trainingSample:
         target = reward
         if not done:
-            target = (reward + data.gamma * np.amax(network.predict(nextState)[0]))
+            target = reward + data.gamma * np.amax(network.predict(nextState)[0])
 
         targetF = network.predict(state)
         targetF[0][action] = target
+
+        #train the network
         network.fit(state, targetF, epochs=1, verbose=0)
 
     if data.epsilon > data.epsilonMin:
@@ -59,34 +63,41 @@ def trainNetwork(network, data, size):
 def storeState(memory, state, nextState, action, reward, done):
     memory.append((state, nextState, action, reward, done))
 
+def runGym(network, data):
+    env = gym.make('CartPole-v1')
+    episodes = 500
+    trainingSize = 32
 
-data = createNetworkData()
-network = createNetwork(data)
-
-env = gym.make('CartPole-v1')
-episodes = 1000
-frames = 500
-trainingSize = 50
-prevFrame = 0
-
-for episode in range(episodes):
-    state = env.reset()
-    state = np.reshape(state, [1, data.stateSize])
-    for frame in range(frames):
-        if prevFrame > 250:
+    for episode in range(episodes):
+        state = env.reset()
+        state = np.reshape(state, [1, data.stateSize])
+        done = False
+        frame = 0
+        while not done:
             env.render()
-        action = createAction(network, data, state)
-        nextState, reward, done, info = env.step(action)
-        reward = reward if not done else -10
-        nextState = np.reshape(nextState, [1, data.stateSize])
+            frame += 1
+            action = createAction(network, data, state)
+            nextState, reward, done, info = env.step(action)
+            nextState = np.reshape(nextState, [1, data.stateSize])
+            storeState(data.memory, state, nextState, action, reward, done)
+            state = nextState
+            
+        print("episode: {}/{}, frames: {}, e: {:.2}".format(episode, episodes, frame, data.epsilon))
 
-        storeState(data.memory, state, nextState, action, reward, done)
-        state = nextState
-        if done:
-            prevFrame = frame
-            print("episode: {}/{}, frames: {}, e: {:.2}".format(episode, episodes, frame, data.epsilon))
-            break
+        if len(data.memory) > trainingSize:
+            trainNetwork(network, data, trainingSize)
 
-    if len(data.memory) > trainingSize:
-        trainNetwork(network, data, trainingSize)
+def saveWeights(network, name):
+    network.save_weights(name)
 
+def loadWeights(network, data, name):
+    weights = network.load_weights(name)
+    data.epsilon = data.epsilonMin;
+
+
+networkData = createNetworkData()
+network = createNetwork(networkData)
+
+loadWeights(network, networkData, "weights")
+runGym(network, networkData)
+#saveWeights(network, "weights")
